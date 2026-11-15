@@ -40,8 +40,10 @@ describe("engine decisions", () => {
     if (out.outcome === "matched") expect(["c1", "c2"]).toContain(out.contributorId);
   });
 
-  it("honors delayMs exactly; default delay stays within 5–20s", () => {
+  it("honors delayMs exactly; other overrides answer promptly; default stays within 5–20s", () => {
     expect(resolveDelayMs({ delayMs: 8000 }, mulberry32(1))).toBe(8000);
+    expect(resolveDelayMs({ drop: true }, mulberry32(1))).toBe(2000);
+    expect(resolveDelayMs({ forceNoMatch: true }, mulberry32(1))).toBe(2000);
     const rng = mulberry32(42);
     for (let i = 0; i < 50; i++) {
       const d = resolveDelayMs(null, rng);

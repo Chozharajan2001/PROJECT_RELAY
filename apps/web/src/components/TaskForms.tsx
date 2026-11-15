@@ -23,11 +23,28 @@ export function CreateForm() {
   );
 }
 
-export function RouteButton({ id }: { id: string }) {
+/** Labeled demo presets (ADR-003): each drives the matching engine path. */
+export function ScenarioButtons({ id }: { id: string }) {
+  const presets = [
+    { key: undefined, label: "Normal" },
+    { key: "slow", label: "Slow 15s" },
+    { key: "drop", label: "Drop" },
+    { key: "no-match", label: "No-match" },
+  ] as const;
   return (
-    <form action={routeTask.bind(null, id)} style={{ display: "inline" }}>
-      <button type="submit">Route</button>
-    </form>
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }} aria-label="scenario presets">
+      {presets.map((p) => (
+        <form
+          key={p.label}
+          action={routeTask.bind(null, id, p.key, undefined)}
+          style={{ display: "inline" }}
+        >
+          <button type="submit" title={`Route with scenario: ${p.label}`}>
+            {p.label}
+          </button>
+        </form>
+      ))}
+    </span>
   );
 }
 

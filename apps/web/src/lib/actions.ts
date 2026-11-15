@@ -24,11 +24,20 @@ export async function createTask(formData: FormData): Promise<void> {
   revalidatePath("/");
 }
 
-export async function routeTask(id: string): Promise<void> {
+export async function routeTask(
+  id: string,
+  preset?: "slow" | "drop" | "no-match",
+  _formData?: FormData,
+): Promise<void> {
+  const scenarios = {
+    slow: { delayMs: 15_000 },
+    drop: { drop: true },
+    "no-match": { forceNoMatch: true },
+  } as const;
   await fetch(`${API_BASE}/tasks/${id}/route`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: "{}",
+    body: JSON.stringify(preset === undefined ? {} : { engine: scenarios[preset] }),
   });
   revalidatePath("/");
 }

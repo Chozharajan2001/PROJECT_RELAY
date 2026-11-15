@@ -5,7 +5,7 @@ import {
   DecisionButtons,
   InterveneControls,
   RecoverButton,
-  RouteButton,
+  ScenarioButtons,
 } from "../src/components/TaskForms";
 import { displayState, eligibleFor } from "../src/lib/board";
 import Link from "next/link";
@@ -73,7 +73,7 @@ export default async function Home() {
                   </td>
                   <td>{candidates.map((c) => c.name).join(", ") || "—"}</td>
                   <td>
-                    {t.state === "created" ? <RouteButton id={t.id} /> : null}
+                    {t.state === "created" ? <ScenarioButtons id={t.id} /> : null}
                     {t.state === "routing" || t.state === "assigned" ? (
                       <InterveneControls id={t.id} candidates={candidates} />
                     ) : null}

@@ -28,9 +28,15 @@ export function mulberry32(seed: number): Rng {
 export const ENGINE_DELAY_MIN_MS = 5_000;
 export const ENGINE_DELAY_MAX_MS = 20_000;
 export const ENGINE_DROP_RATE = 0.2;
+/**
+ * Demo/test overrides answer promptly (unless delayMs says otherwise):
+ * they exist for deterministic demos, not for simulating latency.
+ */
+export const OVERRIDE_DEFAULT_DELAY_MS = 2_000;
 
 export function resolveDelayMs(scenario: EngineOverride | null, rng: Rng = Math.random): number {
   if (scenario !== null && "delayMs" in scenario) return scenario.delayMs;
+  if (scenario !== null) return OVERRIDE_DEFAULT_DELAY_MS;
   return Math.floor(
     ENGINE_DELAY_MIN_MS + rng() * (ENGINE_DELAY_MAX_MS - ENGINE_DELAY_MIN_MS),
   );
