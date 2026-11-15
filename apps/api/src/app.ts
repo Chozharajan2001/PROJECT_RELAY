@@ -1,10 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { Expertise, RouteRequest } from "@relay/contracts";
+import { Expertise, RouteRequest, RoutingCallback } from "@relay/contracts";
 import express from "express";
 import { z } from "zod";
 import { createTask, listContributors, listTasks, pendingJobs } from "./store.js";
-import { startRouting, StateError } from "./transitions.js";
+import { applyCallback, startRouting, StateError } from "./transitions.js";
 
 const CreateTaskBody = z.object({
   title: z.string().min(1).max(200),
@@ -73,6 +73,28 @@ export function createApp(db: DatabaseSync) {
 
   app.get("/internal/routing-jobs", (_req, res) => {
     res.json(pendingJobs(db));
+  });
+
+  app.post("/internal/routing-callback", (req, res) => {
+    const parsed = RoutingCallback.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid callback", details: parsed.error.flatten() });
+      return;
+    }
+    try {
+      const result = applyCallback(db, parsed.data);
+      if (!result.applied && result.reason === "unknown-request") {
+        res.status(404).json({ error: "unknown routing request", applied: false });
+        return;
+      }
+      res.json({ applied: result.applied, reason: result.reason ?? null });
+    } catch (e) {
+      if (e instanceof StateError) {
+        res.status(422).json({ error: e.message, code: e.code });
+        return;
+      }
+      throw e;
+    }
   });
 
   return app;

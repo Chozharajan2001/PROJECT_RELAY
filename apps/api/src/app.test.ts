@@ -5,6 +5,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { migrate, openDb } from "./db/index.js";
+import { assignManual } from "./transitions.js";
 
 function testApp() {
   const dir = mkdtempSync(join(tmpdir(), "relay-api-test-"));
@@ -104,6 +105,79 @@ describe("tasks API", () => {
     await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(202);
     await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(409);
     await request(app).post("/tasks/does-not-exist/route").send({}).expect(404);
+    db.close();
+  });
+
+  it("applies a matched callback: task becomes assigned", async () => {
+    const { app, db } = testApp();
+    db.prepare("INSERT INTO contributors (id, name, expertise) VALUES (?, ?, ?)").run(
+      "c1",
+      "Asha",
+      JSON.stringify(["finance"]),
+    );
+    const created = await request(app)
+      .post("/tasks")
+      .send({ title: "Audit", expertise: "finance" })
+      .expect(201);
+    const routed = await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(202);
+    const cb = await request(app)
+      .post("/internal/routing-callback")
+      .send({ routingRequestId: routed.body.requestId, outcome: "matched", contributorId: "c1" })
+      .expect(200);
+    expect(cb.body).toEqual({ applied: true, reason: null });
+    const list = await request(app).get("/tasks").expect(200);
+    expect(list.body[0].state).toBe("assigned");
+    db.close();
+  });
+
+  it("ignores a late callback for a superseded request: nothing changes, history logs it", async () => {
+    const { app, db } = testApp();
+    db.prepare("INSERT INTO contributors (id, name, expertise) VALUES (?, ?, ?)").run(
+      "c1",
+      "Asha",
+      JSON.stringify(["finance"]),
+    );
+    db.prepare("INSERT INTO contributors (id, name, expertise) VALUES (?, ?, ?)").run(
+      "c2",
+      "Ben",
+      JSON.stringify(["finance"]),
+    );
+    const created = await request(app)
+      .post("/tasks")
+      .send({ title: "Audit", expertise: "finance" })
+      .expect(201);
+    const routed = await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(202);
+    // Operator intervenes while routing is pending (override endpoint lands in T-2.2.4;
+    // same transition function it will call).
+    assignManual(db, created.body.id, "c1");
+    // Outstanding engine answer arrives late.
+    const cb = await request(app)
+      .post("/internal/routing-callback")
+      .send({ routingRequestId: routed.body.requestId, outcome: "matched", contributorId: "c2" })
+      .expect(200);
+    expect(cb.body.applied).toBe(false);
+    const list = await request(app).get("/tasks").expect(200);
+    expect(list.body[0].state).toBe("assigned");
+    // History endpoint lands in T-2.2.4; verify the audit row directly.
+    const kinds = (
+      db
+        .prepare("SELECT kind FROM history_events WHERE task_id = ? ORDER BY seq ASC")
+        .all(created.body.id) as Array<{ kind: string }>
+    ).map((h) => h.kind);
+    expect(kinds).toContain("superseded-callback-ignored");
+    db.close();
+  });
+
+  it("rejects unknown request IDs (404) and malformed callbacks (400)", async () => {
+    const { app, db } = testApp();
+    await request(app)
+      .post("/internal/routing-callback")
+      .send({ routingRequestId: "nope", outcome: "no-match" })
+      .expect(404);
+    await request(app)
+      .post("/internal/routing-callback")
+      .send({ routingRequestId: "x", outcome: "matched" })
+      .expect(400);
     db.close();
   });
 });
