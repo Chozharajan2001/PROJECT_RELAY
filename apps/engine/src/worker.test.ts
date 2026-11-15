@@ -27,7 +27,12 @@ function deps(
   const postCallback = vi.fn(
     overrides.postCallback ?? (async (_body: unknown) => ({ status: 200 })),
   );
-  return { rng: overrides.rng ?? mulberry32(9), sleepMs, postCallback };
+  return {
+    rng: overrides.rng ?? mulberry32(9),
+    sleepMs,
+    postCallback,
+    callbackRetry: { attempts: 3, delayMs: 1000 },
+  };
 }
 
 describe("handleJob", () => {
@@ -68,9 +73,23 @@ describe("handleJob", () => {
     });
   });
 
-  it("a failing callback is reported, not thrown", async () => {
-    const d = deps({ postCallback: vi.fn(async () => { throw new Error("down"); }) });
+  it("a failing callback is retried, then reported when exhausted", async () => {
+    let calls = 0;
+    const flaky = vi.fn(async (_body: unknown) => {
+      calls++;
+      if (calls < 3) throw new Error("down");
+      return { status: 200 };
+    });
+    const d = deps({ rng: () => 0.99, postCallback: flaky });
     const result = await handleJob(job({ scenario: { delayMs: 0 } }), d);
-    expect(result).toBe("callback-failed");
+    expect(result).toBe("answered");
+    expect(flaky).toHaveBeenCalledTimes(3);
+    // 1 initial sleep (delayMs 0) + 2 retry backoffs
+    expect(d.sleepMs).toHaveBeenCalledTimes(3);
+
+    const dead = vi.fn(async (_body: unknown) => { throw new Error("down"); });
+    const d2 = deps({ rng: () => 0.99, postCallback: dead });
+    expect(await handleJob(job({ scenario: { delayMs: 0 } }), d2)).toBe("callback-failed");
+    expect(dead).toHaveBeenCalledTimes(3);
   });
 });

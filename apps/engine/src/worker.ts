@@ -12,26 +12,36 @@ export interface JobDeps {
   rng: Rng;
   sleepMs: (ms: number) => Promise<void>;
   postCallback: (body: unknown) => Promise<{ status: number }>;
+  /** Retry policy for callback delivery (API down mid-callback). */
+  callbackRetry: { attempts: number; delayMs: number };
 }
 
 export type JobResult = "answered" | "dropped" | "callback-failed";
 
 /**
  * One routing request lifecycle. Pure except for injected effects —
- * fully deterministic under test deps. Retry policy lands in T-3.1.3;
- * for now a failed callback is logged by the caller via the return value.
+ * fully deterministic under test deps.
+ *
+ * Restart safety: the worker holds no state that matters. If it dies mid-sleep
+ * or mid-callback, the restarted worker re-polls the same pending job and runs
+ * it again; the API's request-ID fencing turns the duplicate into an audited
+ * no-op (see transitions tests). Retries here cover the short case (API
+ * briefly unreachable); a dead worker is covered by re-poll after restart.
  */
 export async function handleJob(job: EngineJob, deps: JobDeps): Promise<JobResult> {
   if (shouldDrop(job.scenario, deps.rng)) return "dropped";
   await deps.sleepMs(resolveDelayMs(job.scenario, deps.rng));
   const outcome = decideOutcome(job, deps.rng);
   const callback = RoutingCallback.parse({ routingRequestId: job.requestId, ...outcome });
-  try {
-    await deps.postCallback(callback);
-    return "answered";
-  } catch {
-    return "callback-failed";
+  for (let attempt = 1; attempt <= deps.callbackRetry.attempts; attempt++) {
+    try {
+      await deps.postCallback(callback);
+      return "answered";
+    } catch {
+      if (attempt < deps.callbackRetry.attempts) await deps.sleepMs(deps.callbackRetry.delayMs);
+    }
   }
+  return "callback-failed";
 }
 
 const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -63,6 +73,10 @@ export function startWorker(apiBase: string, pollMs: number, seed: number | unde
       const deps: JobDeps = {
         rng: rngFor(job.requestId),
         sleepMs: realSleep,
+        callbackRetry: {
+          attempts: Number(process.env.CALLBACK_ATTEMPTS ?? 3),
+          delayMs: Number(process.env.CALLBACK_RETRY_MS ?? 1000),
+        },
         postCallback: async (body) => {
           const r = await fetch(`${apiBase}/internal/routing-callback`, {
             method: "POST",
