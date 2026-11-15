@@ -8,6 +8,7 @@ import {
   RouteButton,
 } from "../src/components/TaskForms";
 import { displayState, eligibleFor } from "../src/lib/board";
+import Link from "next/link";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001";
 
@@ -59,7 +60,9 @@ export default async function Home() {
               const candidates = eligibleFor(t, contributors);
               return (
                 <tr key={t.id} style={{ borderTop: "1px solid #ccc" }}>
-                  <td>{t.title}</td>
+                  <td>
+                    <Link href={`/tasks/${t.id}`}>{t.title}</Link>
+                  </td>
                   <td>{t.expertise}</td>
                   <td>
                     <AgeCell initialAgeSeconds={t.ageSeconds} />
