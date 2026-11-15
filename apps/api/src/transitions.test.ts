@@ -10,6 +10,7 @@ import {
   applyDecision,
   assignManual,
   cancelRouting,
+  reconcileOnBoot,
   startRouting,
   StateError,
 } from "./transitions.js";
@@ -133,6 +134,44 @@ describe("state machine guard", () => {
     const t = mkTask(db);
     startRouting(db, t.id, "R1");
     expect(() => startRouting(db, t.id, "R2")).toThrowError(StateError);
+    db.close();
+  });
+
+  it("boot reconcile flags old pendings suspect, leaves fresh ones, stays applicable", () => {
+    const db = setup();
+    db.prepare("INSERT INTO contributors (id, name, expertise) VALUES (?, ?, ?)").run(
+      "c9",
+      "Zed",
+      JSON.stringify(["finance"]),
+    );
+    const old = mkTask(db);
+    const fresh = mkTask(db);
+    const now = Date.now();
+    startRouting(db, old.id, "R-OLD", new Date(now - 60_000).toISOString());
+    // Backdate the dispatch to simulate a pre-restart pending attempt.
+    db.prepare("UPDATE routing_attempts SET dispatched_at = ? WHERE request_id = ?").run(
+      new Date(now - 60_000).toISOString(),
+      "R-OLD",
+    );
+    startRouting(db, fresh.id, "R-FRESH", new Date(now).toISOString());
+
+    expect(reconcileOnBoot(db, now)).toBe(1);
+    const statuses = db
+      .prepare("SELECT request_id, status FROM routing_attempts ORDER BY request_id")
+      .all() as Array<{ request_id: string; status: string }>;
+    expect(statuses).toEqual([
+      { request_id: "R-FRESH", status: "pending" },
+      { request_id: "R-OLD", status: "suspect" },
+    ]);
+    expect(history(db, old.id).map((h) => h.kind)).toContain("marked-suspect");
+    expect(stateOf(db, old.id)).toBe("routing"); // never auto-failed
+    expect(reconcileOnBoot(db, now)).toBe(0); // idempotent
+
+    // A merely-slow engine answer to the suspect attempt still applies.
+    expect(
+      applyCallback(db, { routingRequestId: "R-OLD", outcome: "matched", contributorId: "c9" }),
+    ).toEqual({ applied: true });
+    expect(stateOf(db, old.id)).toBe("assigned");
     db.close();
   });
 });

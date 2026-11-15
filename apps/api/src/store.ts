@@ -123,7 +123,7 @@ export function pendingJobs(db: DatabaseSync): RoutingJob[] {
     .prepare(
       `SELECT a.request_id, a.dispatched_at, a.scenario, t.id AS task_id, t.title, t.expertise, t.priority
        FROM routing_attempts a JOIN tasks t ON t.id = a.task_id
-       WHERE a.status = 'pending' ORDER BY a.dispatched_at ASC`,
+       WHERE a.status IN ('pending', 'suspect') ORDER BY a.dispatched_at ASC`,
     )
     .all() as Array<{
     request_id: string;

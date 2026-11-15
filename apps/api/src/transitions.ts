@@ -87,7 +87,7 @@ export function applyCallback(
     | { request_id: string; task_id: string; status: string }
     | undefined;
   if (!attempt) return { applied: false, reason: "unknown-request" };
-  if (attempt.status !== "pending") {
+  if (attempt.status !== "pending" && attempt.status !== "suspect") {
     // Late duplicate or already-superseded answer: audit-log it, change nothing.
     insertHistory(db, attempt.task_id, "superseded-callback-ignored", {
       requestId: input.routingRequestId,
@@ -216,4 +216,33 @@ export function applyDecision(db: DatabaseSync, taskId: string, decision: Decisi
   insertHistory(db, taskId, decision === "decline" ? "declined" : "failed", {
     contributorId: task.active_assignee_id,
   });
+}
+
+/** Default age after which a pending attempt is flagged `suspect` (ADR-001). */
+export const SUSPECT_AFTER_MS = 25_000;
+
+/**
+ * Boot reconcile: attempts still `pending` past the suspect threshold are marked
+ * `suspect` (with history) — never auto-failed. Returns the number flagged.
+ * Safe to run on every boot (idempotent: only `pending` rows are touched).
+ */
+export function reconcileOnBoot(
+  db: DatabaseSync,
+  nowMs = Date.now(),
+  suspectAfterMs = SUSPECT_AFTER_MS,
+): number {
+  const cutoff = new Date(nowMs - suspectAfterMs).toISOString();
+  const stale = db
+    .prepare("SELECT request_id, task_id FROM routing_attempts WHERE status = 'pending' AND dispatched_at < ?")
+    .all(cutoff) as Array<{ request_id: string; task_id: string }>;
+  for (const s of stale) {
+    db.prepare("UPDATE routing_attempts SET status = 'suspect' WHERE request_id = ?").run(
+      s.request_id,
+    );
+    insertHistory(db, s.task_id, "marked-suspect", {
+      requestId: s.request_id,
+      pendingLongerThanMs: suspectAfterMs,
+    });
+  }
+  return stale.length;
 }
