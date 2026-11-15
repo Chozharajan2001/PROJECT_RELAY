@@ -23,10 +23,19 @@ function rowToTask(row: Record<string, unknown>): Task {
   });
 }
 
-export function withAge(task: Task, nowMs = Date.now()): TaskWithAge {
+function isSuspect(db: DatabaseSync, task: Task): boolean {
+  if (task.activeRoutingRequestId === null) return false;
+  const row = db
+    .prepare("SELECT status FROM routing_attempts WHERE request_id = ?")
+    .get(task.activeRoutingRequestId) as { status: string } | undefined;
+  return row?.status === "suspect";
+}
+
+export function withAge(db: DatabaseSync, task: Task, nowMs = Date.now()): TaskWithAge {
   return TaskWithAge.parse({
     ...task,
     ageSeconds: Math.max(0, Math.floor((nowMs - Date.parse(task.createdAt)) / 1000)),
+    suspect: isSuspect(db, task),
   });
 }
 
@@ -75,14 +84,15 @@ export function listTasks(db: DatabaseSync, nowMs = Date.now()): TaskWithAge[] {
   const rows = db
     .prepare("SELECT * FROM tasks ORDER BY created_at ASC")
     .all() as Array<Record<string, unknown>>;
-  return rows.map((r) => withAge(rowToTask(r), nowMs));
+  // N+1 suspect lookup is fine at demo scale; indexed by request_id (PK).
+  return rows.map((r) => withAge(db, rowToTask(r), nowMs));
 }
 
 export function getTask(db: DatabaseSync, taskId: string, nowMs = Date.now()): TaskWithAge | undefined {
   const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as
     | Record<string, unknown>
     | undefined;
-  return row === undefined ? undefined : withAge(rowToTask(row), nowMs);
+  return row === undefined ? undefined : withAge(db, rowToTask(row), nowMs);
 }
 
 export function taskHistory(db: DatabaseSync, taskId: string): Array<{

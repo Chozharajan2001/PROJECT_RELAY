@@ -134,6 +134,8 @@ export type OverrideRequest = z.infer<typeof OverrideRequest>;
 /** Task as served by GET /tasks: includes live age for the operator board. */
 export const TaskWithAge = Task.extend({
   ageSeconds: z.number().nonnegative(),
+  /** True when the active routing attempt was flagged suspect (ADR-001). Display-only. */
+  suspect: z.boolean(),
 });
 export type TaskWithAge = z.infer<typeof TaskWithAge>;
 

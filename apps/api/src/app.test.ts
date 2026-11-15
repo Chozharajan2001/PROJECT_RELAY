@@ -5,7 +5,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app.js";
 import { migrate, openDb } from "./db/index.js";
-import { assignManual } from "./transitions.js";
+import { assignManual, reconcileOnBoot } from "./transitions.js";
 
 function testApp() {
   const dir = mkdtempSync(join(tmpdir(), "relay-api-test-"));
@@ -241,6 +241,24 @@ describe("tasks API", () => {
     const kinds = history.body.map((h: { kind: string }) => h.kind);
     expect(kinds).toEqual(["created", "routing-started", "assigned", "declined", "routing-started"]);
     expect(history.body.map((h: { seq: number }) => h.seq)).toEqual([0, 1, 2, 3, 4]);
+    db.close();
+  });
+
+  it("exposes suspect tasks on the board feed", async () => {
+    const { app, db } = testApp();
+    const created = await request(app)
+      .post("/tasks")
+      .send({ title: "Stuck", expertise: "finance" })
+      .expect(201);
+    const routed = await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(202);
+    db.prepare("UPDATE routing_attempts SET dispatched_at = ? WHERE request_id = ?").run(
+      new Date(Date.now() - 60_000).toISOString(),
+      routed.body.requestId,
+    );
+    expect(reconcileOnBoot(db)).toBe(1);
+    const list = await request(app).get("/tasks").expect(200);
+    expect(list.body[0].state).toBe("routing");
+    expect(list.body[0].suspect).toBe(true);
     db.close();
   });
 
