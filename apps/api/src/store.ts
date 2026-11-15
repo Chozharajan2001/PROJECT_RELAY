@@ -102,3 +102,49 @@ export function insertHistory(
     "INSERT INTO history_events (id, task_id, seq, kind, payload, at) VALUES (?, ?, ?, ?, ?, ?)",
   ).run(randomUUID(), taskId, row.m + 1, kind, JSON.stringify(payload), new Date().toISOString());
 }
+
+export interface RoutingJob {
+  requestId: string;
+  taskId: string;
+  taskTitle: string;
+  expertise: string;
+  priority: string;
+  scenario: unknown;
+  eligibleContributors: Array<{ id: string; name: string }>;
+  dispatchedAt: string;
+}
+
+/**
+ * Poll feed for the engine worker (EPIC-3). The engine claims jobs by acting on
+ * them (callback); the API never pushes, so this endpoint is the only coupling.
+ */
+export function pendingJobs(db: DatabaseSync): RoutingJob[] {
+  const attempts = db
+    .prepare(
+      `SELECT a.request_id, a.dispatched_at, a.scenario, t.id AS task_id, t.title, t.expertise, t.priority
+       FROM routing_attempts a JOIN tasks t ON t.id = a.task_id
+       WHERE a.status = 'pending' ORDER BY a.dispatched_at ASC`,
+    )
+    .all() as Array<{
+    request_id: string;
+    dispatched_at: string;
+    scenario: string | null;
+    task_id: string;
+    title: string;
+    expertise: string;
+    priority: string;
+  }>;
+  const contributors = listContributors(db);
+  return attempts.map((a) => ({
+    requestId: a.request_id,
+    taskId: a.task_id,
+    taskTitle: a.title,
+    expertise: a.expertise,
+    priority: a.priority,
+    scenario: a.scenario === null ? null : JSON.parse(a.scenario),
+    eligibleContributors: contributors
+      .filter((c) => c.expertise.includes(a.expertise as never))
+      .map((c) => ({ id: c.id, name: c.name })),
+    dispatchedAt: a.dispatched_at,
+  }));
+}

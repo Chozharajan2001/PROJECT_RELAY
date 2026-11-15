@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const MIGRATIONS: Array<{ version: number; sql: string }> = [
   {
@@ -43,6 +43,12 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
     CREATE INDEX idx_tasks_state ON tasks(state);
     CREATE INDEX idx_attempts_task_status ON routing_attempts(task_id, status);
     CREATE INDEX idx_history_task_seq ON history_events(task_id, seq);
+    `,
+  },
+  {
+    version: 2,
+    sql: `
+    ALTER TABLE routing_attempts ADD COLUMN scenario TEXT NULL;
     `,
   },
 ];
