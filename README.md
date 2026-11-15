@@ -2,8 +2,7 @@
 
 Operator-supervised task routing: an Express API assigns tasks to contributors via a
 separate engine worker; a Next.js board gives the operator full override control.
-(Assignment constraints: ≤1 active assignee, 5–20s engine latency, 20% silent drops,
-restart-safe. See HIVE/docs/DESIGN.md.)
+Constraints: ≤1 active assignee, 5–20s engine latency, 20% silent drops, restart-safe.
 
 ## Prerequisites
 
