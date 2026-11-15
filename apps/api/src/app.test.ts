@@ -180,4 +180,80 @@ describe("tasks API", () => {
       .expect(400);
     db.close();
   });
+
+  it("override mid-routing supersedes the pending attempt (full HTTP)", async () => {
+    const { app, db } = testApp();
+    db.prepare("INSERT INTO contributors (id, name, expertise) VALUES (?, ?, ?)").run(
+      "c1",
+      "Asha",
+      JSON.stringify(["finance"]),
+    );
+    const created = await request(app)
+      .post("/tasks")
+      .send({ title: "Audit", expertise: "finance" })
+      .expect(201);
+    await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(202);
+    const ov = await request(app)
+      .post(`/tasks/${created.body.id}/override`)
+      .send({ contributorId: "c1" })
+      .expect(200);
+    expect(ov.body.state).toBe("assigned");
+    const jobs = await request(app).get("/internal/routing-jobs").expect(200);
+    expect(jobs.body).toEqual([]);
+    const history = await request(app).get(`/tasks/${created.body.id}/history`).expect(200);
+    expect(history.body.map((h: { kind: string }) => h.kind)).toEqual([
+      "created",
+      "routing-started",
+      "overridden",
+    ]);
+    // Override on accepted task is rejected.
+    await request(app).post(`/tasks/${created.body.id}/decision`).send({ decision: "accept" }).expect(200);
+    await request(app)
+      .post(`/tasks/${created.body.id}/override`)
+      .send({ contributorId: "c1" })
+      .expect(409);
+    db.close();
+  });
+
+  it("recover re-routes a declined task; history stays ordered", async () => {
+    const { app, db } = testApp();
+    db.prepare("INSERT INTO contributors (id, name, expertise) VALUES (?, ?, ?)").run(
+      "c1",
+      "Asha",
+      JSON.stringify(["finance"]),
+    );
+    const created = await request(app)
+      .post("/tasks")
+      .send({ title: "Audit", expertise: "finance" })
+      .expect(201);
+    const routed = await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(202);
+    await request(app)
+      .post("/internal/routing-callback")
+      .send({ routingRequestId: routed.body.requestId, outcome: "matched", contributorId: "c1" })
+      .expect(200);
+    await request(app)
+      .post(`/tasks/${created.body.id}/decision`)
+      .send({ decision: "decline" })
+      .expect(200);
+    const rec = await request(app).post(`/tasks/${created.body.id}/recover`).send({}).expect(202);
+    expect(rec.body.state).toBe("routing");
+    const history = await request(app).get(`/tasks/${created.body.id}/history`).expect(200);
+    const kinds = history.body.map((h: { kind: string }) => h.kind);
+    expect(kinds).toEqual(["created", "routing-started", "assigned", "declined", "routing-started"]);
+    expect(history.body.map((h: { seq: number }) => h.seq)).toEqual([0, 1, 2, 3, 4]);
+    db.close();
+  });
+
+  it("rejects bad override/decision bodies and unknown-task history", async () => {
+    const { app, db } = testApp();
+    const created = await request(app)
+      .post("/tasks")
+      .send({ title: "X", expertise: "finance" })
+      .expect(201);
+    await request(app).post(`/tasks/${created.body.id}/override`).send({}).expect(400);
+    await request(app).post(`/tasks/${created.body.id}/decision`).send({ decision: "maybe" }).expect(400);
+    await request(app).post(`/tasks/${created.body.id}/decision`).send({ decision: "accept" }).expect(409);
+    await request(app).get("/tasks/does-not-exist/history").expect(404);
+    db.close();
+  });
 });

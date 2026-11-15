@@ -78,6 +78,27 @@ export function listTasks(db: DatabaseSync, nowMs = Date.now()): TaskWithAge[] {
   return rows.map((r) => withAge(rowToTask(r), nowMs));
 }
 
+export function getTask(db: DatabaseSync, taskId: string, nowMs = Date.now()): TaskWithAge | undefined {
+  const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as
+    | Record<string, unknown>
+    | undefined;
+  return row === undefined ? undefined : withAge(rowToTask(row), nowMs);
+}
+
+export function taskHistory(db: DatabaseSync, taskId: string): Array<{
+  id: string;
+  seq: number;
+  kind: string;
+  payload: unknown;
+  at: string;
+}> {
+  return (
+    db
+      .prepare("SELECT id, seq, kind, payload, at FROM history_events WHERE task_id = ? ORDER BY seq ASC")
+      .all(taskId) as Array<{ id: string; seq: number; kind: string; payload: string; at: string }>
+  ).map((h) => ({ ...h, payload: JSON.parse(h.payload) }));
+}
+
 export function listContributors(db: DatabaseSync): Contributor[] {
   const rows = db.prepare("SELECT * FROM contributors ORDER BY name ASC").all() as Array<{
     id: string;

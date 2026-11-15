@@ -1,10 +1,25 @@
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { Expertise, RouteRequest, RoutingCallback } from "@relay/contracts";
+import { Expertise, OverrideRequest, RouteRequest, RoutingCallback } from "@relay/contracts";
 import express from "express";
 import { z } from "zod";
-import { createTask, listContributors, listTasks, pendingJobs } from "./store.js";
-import { applyCallback, startRouting, StateError } from "./transitions.js";
+import {
+  createTask,
+  getTask,
+  listContributors,
+  listTasks,
+  pendingJobs,
+  taskHistory,
+} from "./store.js";
+import {
+  applyCallback,
+  applyDecision,
+  assignManual,
+  cancelRouting,
+  startRouting,
+  StateError,
+  type Decision,
+} from "./transitions.js";
 
 const CreateTaskBody = z.object({
   title: z.string().min(1).max(200),
@@ -95,6 +110,88 @@ export function createApp(db: DatabaseSync) {
       }
       throw e;
     }
+  });
+
+  app.post("/tasks/:id/override", (req, res) => {
+    const parsed = OverrideRequest.safeParse(req.body ?? {});
+    if (!parsed.success || (parsed.data.contributorId === undefined && parsed.data.cancel !== true)) {
+      res.status(400).json({ error: "override needs contributorId or {cancel:true}" });
+      return;
+    }
+    try {
+      if (parsed.data.cancel === true) cancelRouting(db, req.params.id);
+      else assignManual(db, req.params.id, parsed.data.contributorId as string);
+    } catch (e) {
+      if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
+        res.status(404).json({ error: e.message });
+        return;
+      }
+      if (e instanceof StateError) {
+        res.status(409).json({ error: e.message, code: e.code });
+        return;
+      }
+      throw e;
+    }
+    res.json(getTask(db, req.params.id));
+  });
+
+  app.post("/tasks/:id/recover", (req, res) => {
+    const parsed = z.object({ contributorId: z.string().min(1).optional() }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid recover request" });
+      return;
+    }
+    try {
+      if (parsed.data.contributorId !== undefined) {
+        assignManual(db, req.params.id, parsed.data.contributorId);
+        res.json(getTask(db, req.params.id));
+        return;
+      }
+      startRouting(db, req.params.id, randomUUID());
+    } catch (e) {
+      if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
+        res.status(404).json({ error: e.message });
+        return;
+      }
+      if (e instanceof StateError) {
+        res.status(409).json({ error: e.message, code: e.code });
+        return;
+      }
+      throw e;
+    }
+    res.status(202).json(getTask(db, req.params.id));
+  });
+
+  const DecisionBody = z.object({ decision: z.enum(["accept", "decline", "fail"]) });
+
+  app.post("/tasks/:id/decision", (req, res) => {
+    const parsed = DecisionBody.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: "decision must be accept, decline, or fail" });
+      return;
+    }
+    try {
+      applyDecision(db, req.params.id, parsed.data.decision as Decision);
+    } catch (e) {
+      if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
+        res.status(404).json({ error: e.message });
+        return;
+      }
+      if (e instanceof StateError) {
+        res.status(409).json({ error: e.message, code: e.code });
+        return;
+      }
+      throw e;
+    }
+    res.json(getTask(db, req.params.id));
+  });
+
+  app.get("/tasks/:id/history", (req, res) => {
+    if (getTask(db, req.params.id) === undefined) {
+      res.status(404).json({ error: "unknown task" });
+      return;
+    }
+    res.json(taskHistory(db, req.params.id));
   });
 
   return app;
