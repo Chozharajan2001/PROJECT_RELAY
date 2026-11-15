@@ -47,4 +47,4 @@ apps/engine       Routing simulator worker (stateless, callback-only)
 packages/contracts  Shared zod schemas + types
 ```
 
-Pushes and merges require explicit human approval (see HIVE/AGENTS.md).
+Pushes and merges require explicit human approval.
