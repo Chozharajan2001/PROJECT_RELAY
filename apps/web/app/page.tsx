@@ -1,6 +1,12 @@
 import type { Contributor, TaskWithAge } from "@relay/contracts";
 import AgeCell from "../src/components/AgeCell";
-import { CreateForm, RouteButton } from "../src/components/TaskForms";
+import {
+  CreateForm,
+  DecisionButtons,
+  InterveneControls,
+  RecoverButton,
+  RouteButton,
+} from "../src/components/TaskForms";
 import { displayState, eligibleFor } from "../src/lib/board";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001";
@@ -50,6 +56,7 @@ export default async function Home() {
           <tbody>
             {tasks.map((t) => {
               const state = displayState(t);
+              const candidates = eligibleFor(t, contributors);
               return (
                 <tr key={t.id} style={{ borderTop: "1px solid #ccc" }}>
                   <td>{t.title}</td>
@@ -61,8 +68,17 @@ export default async function Home() {
                     <strong data-state={state}>{state}</strong>
                     {state === "suspect" ? " — may never return" : ""}
                   </td>
-                  <td>{eligibleFor(t, contributors).map((c) => c.name).join(", ") || "—"}</td>
-                  <td>{t.state === "created" ? <RouteButton id={t.id} /> : null}</td>
+                  <td>{candidates.map((c) => c.name).join(", ") || "—"}</td>
+                  <td>
+                    {t.state === "created" ? <RouteButton id={t.id} /> : null}
+                    {t.state === "routing" || t.state === "assigned" ? (
+                      <InterveneControls id={t.id} candidates={candidates} />
+                    ) : null}
+                    {t.state === "assigned" ? <DecisionButtons id={t.id} /> : null}
+                    {t.state === "declined" || t.state === "failed" ? (
+                      <RecoverButton id={t.id} />
+                    ) : null}
+                  </td>
                 </tr>
               );
             })}

@@ -32,3 +32,41 @@ export async function routeTask(id: string): Promise<void> {
   });
   revalidatePath("/");
 }
+
+export async function overrideAssign(id: string, formData: FormData): Promise<void> {
+  const contributorId = formData.get("contributorId");
+  if (typeof contributorId !== "string" || contributorId === "") return;
+  await fetch(`${API_BASE}/tasks/${id}/override`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ contributorId }),
+  });
+  revalidatePath("/");
+}
+
+export async function cancelRoute(id: string): Promise<void> {
+  await fetch(`${API_BASE}/tasks/${id}/override`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cancel: true }),
+  });
+  revalidatePath("/");
+}
+
+export async function decideTask(id: string, decision: "accept" | "decline" | "fail"): Promise<void> {
+  await fetch(`${API_BASE}/tasks/${id}/decision`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
+  revalidatePath("/");
+}
+
+export async function recoverTask(id: string): Promise<void> {
+  await fetch(`${API_BASE}/tasks/${id}/recover`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  revalidatePath("/");
+}

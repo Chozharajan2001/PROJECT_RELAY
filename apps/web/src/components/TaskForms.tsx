@@ -1,4 +1,4 @@
-import { createTask, routeTask } from "../lib/actions";
+import { cancelRoute, createTask, decideTask, overrideAssign, recoverTask, routeTask } from "../lib/actions";
 
 const EXPERTISE = ["finance", "healthcare", "data-analysis", "operations", "legal"] as const;
 
@@ -27,6 +27,57 @@ export function RouteButton({ id }: { id: string }) {
   return (
     <form action={routeTask.bind(null, id)} style={{ display: "inline" }}>
       <button type="submit">Route</button>
+    </form>
+  );
+}
+
+/** Manual assign (override) + cancel, for routing/assigned tasks. */
+export function InterveneControls({
+  id,
+  candidates,
+}: {
+  id: string;
+  candidates: { id: string; name: string }[];
+}) {
+  return (
+    <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+      <form action={overrideAssign.bind(null, id)} style={{ display: "inline-flex", gap: 4 }}>
+        <select name="contributorId" aria-label="assignee" defaultValue={candidates[0]?.id ?? ""}>
+          {candidates.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={candidates.length === 0}>
+          Assign
+        </button>
+      </form>
+      <form action={cancelRoute.bind(null, id)} style={{ display: "inline" }}>
+        <button type="submit">Cancel</button>
+      </form>
+    </span>
+  );
+}
+
+/** Accept / decline / fail, for assigned tasks. */
+export function DecisionButtons({ id }: { id: string }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 4 }}>
+      {(["accept", "decline", "fail"] as const).map((d) => (
+        <form key={d} action={decideTask.bind(null, id, d)} style={{ display: "inline" }}>
+          <button type="submit">{d}</button>
+        </form>
+      ))}
+    </span>
+  );
+}
+
+/** Re-route a declined/failed task. */
+export function RecoverButton({ id }: { id: string }) {
+  return (
+    <form action={recoverTask.bind(null, id)} style={{ display: "inline" }}>
+      <button type="submit">Recover</button>
     </form>
   );
 }
