@@ -105,7 +105,9 @@ export function createApp(db: DatabaseSync) {
       res.json({ applied: result.applied, reason: result.reason ?? null });
     } catch (e) {
       if (e instanceof StateError) {
-        res.status(422).json({ error: e.message, code: e.code });
+        // Same mapping as operator endpoints (409): the engine cannot act on the
+        // distinction anyway; it logs and moves on.
+        res.status(409).json({ error: e.message, code: e.code });
         return;
       }
       throw e;
