@@ -35,7 +35,10 @@ export async function handleJob(job: EngineJob, deps: JobDeps): Promise<JobResul
   const callback = RoutingCallback.parse({ routingRequestId: job.requestId, ...outcome });
   for (let attempt = 1; attempt <= deps.callbackRetry.attempts; attempt++) {
     try {
-      await deps.postCallback(callback);
+      const res = await deps.postCallback(callback);
+      // 5xx is transport-class: retry. Anything else (200, 409/404 fencing) is
+      // the API's final word — never retry a decision already made (O-1).
+      if (res.status >= 500) throw new Error(`callback HTTP ${res.status}`);
       return "answered";
     } catch {
       if (attempt < deps.callbackRetry.attempts) await deps.sleepMs(deps.callbackRetry.delayMs);
@@ -86,10 +89,18 @@ export function startWorker(apiBase: string, pollMs: number, seed: number | unde
           return { status: r.status };
         },
       };
-      void handleJob(job, deps).then((result) => {
-        // eslint-disable-next-line no-console
-        console.log(`[engine] ${job.requestId} -> ${result}`);
-      });
+      // Fire-and-forget per job (concurrency), but never unhandled: a poisoned job
+      // (e.g. contract drift in RoutingCallback.parse) must not crash-loop the
+      // worker and starve siblings (O-2). The attempt stays pending; reconcile
+      // flags it suspect and the operator acts.
+      void handleJob(job, deps)
+        .then((result) => {
+          // eslint-disable-next-line no-console
+          console.log(`[engine] ${job.requestId} -> ${result}`);
+        })
+        .catch((e) => {
+          console.error(`[engine] ${job.requestId} crashed: ${(e as Error).message}`);
+        });
     }
   }
 

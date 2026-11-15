@@ -92,4 +92,17 @@ describe("handleJob", () => {
     expect(await handleJob(job({ scenario: { delayMs: 0 } }), d2)).toBe("callback-failed");
     expect(dead).toHaveBeenCalledTimes(3);
   });
+
+  it("retries transient 5xx but accepts fencing statuses immediately", async () => {
+    let n = 0;
+    const flaky5xx = vi.fn(async (_body: unknown) => (++n < 3 ? { status: 503 } : { status: 200 }));
+    const d = deps({ rng: () => 0.99, postCallback: flaky5xx });
+    expect(await handleJob(job({ scenario: { delayMs: 0 } }), d)).toBe("answered");
+    expect(flaky5xx).toHaveBeenCalledTimes(3);
+
+    const fenced = vi.fn(async (_body: unknown) => ({ status: 409 }));
+    const d2 = deps({ rng: () => 0.99, postCallback: fenced });
+    expect(await handleJob(job({ scenario: { delayMs: 0 } }), d2)).toBe("answered");
+    expect(fenced).toHaveBeenCalledTimes(1);
+  });
 });
