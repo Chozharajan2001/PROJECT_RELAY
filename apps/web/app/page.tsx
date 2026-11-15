@@ -1,5 +1,6 @@
 import type { Contributor, TaskWithAge } from "@relay/contracts";
 import AgeCell from "../src/components/AgeCell";
+import { CreateForm, RouteButton } from "../src/components/TaskForms";
 import { displayState, eligibleFor } from "../src/lib/board";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001";
@@ -29,6 +30,7 @@ export default async function Home() {
   return (
     <main style={{ fontFamily: "system-ui", padding: 24, maxWidth: 960 }}>
       <h1>PROJECT_RELAY — operator board</h1>
+      <CreateForm />
       {error !== null ? (
         <p role="alert">API unreachable ({error}). Start it with `npm run dev`.</p>
       ) : tasks.length === 0 ? (
@@ -42,6 +44,7 @@ export default async function Home() {
               <th align="left">Age</th>
               <th align="left">State</th>
               <th align="left">Candidates</th>
+              <th align="left">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -59,6 +62,7 @@ export default async function Home() {
                     {state === "suspect" ? " — may never return" : ""}
                   </td>
                   <td>{eligibleFor(t, contributors).map((c) => c.name).join(", ") || "—"}</td>
+                  <td>{t.state === "created" ? <RouteButton id={t.id} /> : null}</td>
                 </tr>
               );
             })}

@@ -1,0 +1,34 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { type CreateInput, parseCreateInput } from "./create-input";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3001";
+
+export async function createTask(formData: FormData): Promise<void> {
+  let input: CreateInput;
+  try {
+    input = parseCreateInput({
+      title: formData.get("title"),
+      expertise: formData.get("expertise"),
+      priority: formData.get("priority") ?? undefined,
+    });
+  } catch {
+    return; // Required attributes + fixed selects make this unreachable in practice.
+  }
+  await fetch(`${API_BASE}/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  revalidatePath("/");
+}
+
+export async function routeTask(id: string): Promise<void> {
+  await fetch(`${API_BASE}/tasks/${id}/route`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  revalidatePath("/");
+}
