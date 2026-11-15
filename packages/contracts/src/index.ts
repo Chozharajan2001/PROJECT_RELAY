@@ -131,4 +131,10 @@ export const OverrideRequest = z.object({
 });
 export type OverrideRequest = z.infer<typeof OverrideRequest>;
 
+/** Task as served by GET /tasks: includes live age for the operator board. */
+export const TaskWithAge = Task.extend({
+  ageSeconds: z.number().nonnegative(),
+});
+export type TaskWithAge = z.infer<typeof TaskWithAge>;
+
 export const CONTRACTS_VERSION = "0.1.0";

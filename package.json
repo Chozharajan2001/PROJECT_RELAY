@@ -8,8 +8,11 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,engine,web -c blue,green,magenta \"npm run dev --workspace apps/api\" \"npm run dev --workspace apps/engine\" \"npm run dev --workspace apps/web\"",
+    "predev": "npm run build --workspace packages/contracts",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "pretypecheck": "npm run build --workspace packages/contracts",
+    "test": "npm run test --workspaces --if-present",
+    "pretest": "npm run build --workspace packages/contracts"
   },
   "devDependencies": {
     "concurrently": "^9.0.1",

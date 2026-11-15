@@ -1,15 +1,18 @@
-import express from "express";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { createApp } from "./app.js";
+import { migrate, openDb } from "./db/index.js";
 
 const PORT = Number(process.env.API_PORT ?? 3001);
+const DB_PATH = process.env.DB_PATH ?? join(process.cwd(), "data", "relay.db");
 
-const app = express();
-app.use(express.json());
+mkdirSync(dirname(DB_PATH), { recursive: true });
+const db = openDb(DB_PATH);
+migrate(db);
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "relay-api", version: "0.1.0" });
-});
+const app = createApp(db);
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
-  console.log(`relay-api listening on :${PORT}`);
+  console.log(`relay-api listening on :${PORT} (db=${DB_PATH})`);
 });
