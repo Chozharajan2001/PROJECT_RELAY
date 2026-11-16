@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { insertHistory } from "./store.js";
+import { insertHistory, SUSPECT_AFTER_MS } from "./store.js";
 
 /**
  * State machine guard (DESIGN §4, ADR-001).
@@ -187,8 +187,10 @@ export function cancelRouting(db: DatabaseSync, taskId: string): void {
 
 function supersedePending(db: DatabaseSync, requestId: string | null): void {
   if (requestId === null) return;
+  // Flip both pending and already-flagged suspect attempts: a superseded attempt
+  // must leave the poll feed, or the worker re-claims it after every restart (Q3).
   db.prepare(
-    "UPDATE routing_attempts SET status = 'superseded', resolved_at = ? WHERE request_id = ? AND status = 'pending'",
+    "UPDATE routing_attempts SET status = 'superseded', resolved_at = ? WHERE request_id = ? AND status IN ('pending', 'suspect')",
   ).run(new Date().toISOString(), requestId);
 }
 
@@ -219,7 +221,7 @@ export function applyDecision(db: DatabaseSync, taskId: string, decision: Decisi
 }
 
 /** Default age after which a pending attempt is flagged `suspect` (ADR-001). */
-export const SUSPECT_AFTER_MS = 25_000;
+export { SUSPECT_AFTER_MS };
 
 /**
  * Boot reconcile: attempts still `pending` past the suspect threshold are marked

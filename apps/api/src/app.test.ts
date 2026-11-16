@@ -262,6 +262,43 @@ describe("tasks API", () => {
     db.close();
   });
 
+  it("flags a live overdue pending as suspect with no restart (Q1)", async () => {
+    const { app, db } = testApp();
+    const created = await request(app)
+      .post("/tasks")
+      .send({ title: "Live stuck", expertise: "finance" })
+      .expect(201);
+    const routed = await request(app).post(`/tasks/${created.body.id}/route`).send({}).expect(202);
+    // Backdate only: no reconcile, no restart — the read path must flag it.
+    db.prepare("UPDATE routing_attempts SET dispatched_at = ? WHERE request_id = ?").run(
+      new Date(Date.now() - 60_000).toISOString(),
+      routed.body.requestId,
+    );
+    const list = await request(app).get("/tasks").expect(200);
+    expect(list.body[0].state).toBe("routing");
+    expect(list.body[0].suspect).toBe(true);
+    db.close();
+  });
+
+  it("gates /internal/* behind the shared secret when configured (Q4)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-api-test-"));
+    const gatedDb = openDb(join(dir, "test.db"));
+    migrate(gatedDb);
+    const gated = createApp(gatedDb, { internalSecret: "s3cret" });
+    await request(gated).get("/internal/routing-jobs").expect(403);
+    await request(gated)
+      .post("/internal/routing-callback")
+      .send({ routingRequestId: "x", outcome: "no-match" })
+      .expect(403);
+    await request(gated)
+      .get("/internal/routing-jobs")
+      .set("x-relay-internal-secret", "s3cret")
+      .expect(200);
+    // Public surface unaffected.
+    await request(gated).get("/tasks").expect(200);
+    gatedDb.close();
+  });
+
   it("rejects bad override/decision bodies and unknown-task history", async () => {
     const { app, db } = testApp();
     const created = await request(app)

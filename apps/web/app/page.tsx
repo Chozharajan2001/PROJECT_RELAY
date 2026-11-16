@@ -1,5 +1,6 @@
 import type { Contributor, TaskWithAge } from "@relay/contracts";
 import AgeCell from "../src/components/AgeCell";
+import RefreshTicker from "../src/components/RefreshTicker";
 import {
   CreateForm,
   DecisionButtons,
@@ -37,6 +38,7 @@ export default async function Home() {
   return (
     <main style={{ fontFamily: "system-ui", padding: 24, maxWidth: 960 }}>
       <h1>PROJECT_RELAY — operator board</h1>
+      <RefreshTicker />
       <CreateForm />
       {error !== null ? (
         <p role="alert">API unreachable ({error}). Start it with `npm run dev`.</p>

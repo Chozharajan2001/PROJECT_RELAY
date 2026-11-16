@@ -5,5 +5,6 @@ import { startWorker } from "./worker.js";
 const API_BASE = process.env.API_BASE ?? "http://localhost:3001";
 const POLL_MS = Number(process.env.ENGINE_POLL_MS ?? 1000);
 const SEED = process.env.ENGINE_SEED !== undefined ? Number(process.env.ENGINE_SEED) : undefined;
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
 
-startWorker(API_BASE, POLL_MS, SEED);
+startWorker(API_BASE, POLL_MS, SEED, INTERNAL_SECRET);

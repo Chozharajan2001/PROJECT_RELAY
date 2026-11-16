@@ -50,7 +50,14 @@ export async function handleJob(job: EngineJob, deps: JobDeps): Promise<JobResul
 const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Production loop: poll the jobs feed, claim new jobs, handle concurrently. */
-export function startWorker(apiBase: string, pollMs: number, seed: number | undefined): void {
+export function startWorker(
+  apiBase: string,
+  pollMs: number,
+  seed: number | undefined,
+  internalSecret?: string,
+): void {
+  const headers: Record<string, string> =
+    internalSecret === undefined ? {} : { "x-relay-internal-secret": internalSecret };
   const claimed = new Set<string>();
   const rngFor = (requestId: string): Rng => {
     if (seed === undefined) return Math.random;
@@ -60,7 +67,7 @@ export function startWorker(apiBase: string, pollMs: number, seed: number | unde
   async function pollOnce(): Promise<void> {
     let res: Response;
     try {
-      res = await fetch(`${apiBase}/internal/routing-jobs`);
+      res = await fetch(`${apiBase}/internal/routing-jobs`, { headers });
     } catch (e) {
       console.error(`[engine] poll failed: ${(e as Error).message}`);
       return;
@@ -83,7 +90,7 @@ export function startWorker(apiBase: string, pollMs: number, seed: number | unde
         postCallback: async (body) => {
           const r = await fetch(`${apiBase}/internal/routing-callback`, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/json", ...headers },
             body: JSON.stringify(body),
           });
           return { status: r.status };

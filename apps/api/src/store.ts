@@ -23,19 +23,32 @@ function rowToTask(row: Record<string, unknown>): Task {
   });
 }
 
-function isSuspect(db: DatabaseSync, task: Task): boolean {
-  if (task.activeRoutingRequestId === null) return false;
+function isSuspect(
+  db: DatabaseSync,
+  task: Pick<Task, "state" | "activeRoutingRequestId">,
+  nowMs: number,
+  suspectAfterMs = SUSPECT_AFTER_MS,
+): boolean {
+  if (task.state !== "routing" || task.activeRoutingRequestId === null) return false;
   const row = db
-    .prepare("SELECT status FROM routing_attempts WHERE request_id = ?")
-    .get(task.activeRoutingRequestId) as { status: string } | undefined;
-  return row?.status === "suspect";
+    .prepare("SELECT status, dispatched_at FROM routing_attempts WHERE request_id = ?")
+    .get(task.activeRoutingRequestId) as
+    | { status: string; dispatched_at: string }
+    | undefined;
+  if (row === undefined || (row.status !== "pending" && row.status !== "suspect")) return false;
+  // Belt and braces: the boot reconcile writes 'suspect', but a live pending older
+  // than the threshold flags at read time too — no restart required (Q1).
+  return row.status === "suspect" || Date.parse(row.dispatched_at) <= nowMs - suspectAfterMs;
 }
+
+/** Default age after which a pending attempt is flagged `suspect` (ADR-001). */
+export const SUSPECT_AFTER_MS = 25_000;
 
 export function withAge(db: DatabaseSync, task: Task, nowMs = Date.now()): TaskWithAge {
   return TaskWithAge.parse({
     ...task,
     ageSeconds: Math.max(0, Math.floor((nowMs - Date.parse(task.createdAt)) / 1000)),
-    suspect: isSuspect(db, task),
+    suspect: isSuspect(db, task, nowMs),
   });
 }
 
@@ -154,7 +167,8 @@ export function pendingJobs(db: DatabaseSync): RoutingJob[] {
     .prepare(
       `SELECT a.request_id, a.dispatched_at, a.scenario, t.id AS task_id, t.title, t.expertise, t.priority
        FROM routing_attempts a JOIN tasks t ON t.id = a.task_id
-       WHERE a.status IN ('pending', 'suspect') ORDER BY a.dispatched_at ASC`,
+       WHERE a.status IN ('pending', 'suspect') AND t.state = 'routing'
+       ORDER BY a.dispatched_at ASC`,
     )
     .all() as Array<{
     request_id: string;

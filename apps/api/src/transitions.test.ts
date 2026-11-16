@@ -174,4 +174,30 @@ describe("state machine guard", () => {
     expect(stateOf(db, old.id)).toBe("assigned");
     db.close();
   });
+
+  it("override on a suspect attempt supersedes it (Q3: leaves the poll feed)", () => {
+    const db = setup();
+    const t = mkTask(db);
+    const now = Date.now();
+    startRouting(db, t.id, "R1", new Date(now - 60_000).toISOString());
+    db.prepare("UPDATE routing_attempts SET dispatched_at = ? WHERE request_id = ?").run(
+      new Date(now - 60_000).toISOString(),
+      "R1",
+    );
+    expect(reconcileOnBoot(db, now)).toBe(1);
+    assignManual(db, t.id, "c1");
+    const status = db
+      .prepare("SELECT status FROM routing_attempts WHERE request_id = ?")
+      .get("R1") as { status: string };
+    expect(status.status).toBe("superseded");
+    // Poll feed no longer carries it: superseded + task not routing.
+    const feed = db
+      .prepare(
+        `SELECT a.request_id FROM routing_attempts a JOIN tasks t ON t.id = a.task_id
+         WHERE a.status IN ('pending', 'suspect') AND t.state = 'routing'`,
+      )
+      .all();
+    expect(feed).toEqual([]);
+    db.close();
+  });
 });

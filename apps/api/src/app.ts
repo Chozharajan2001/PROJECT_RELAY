@@ -27,9 +27,22 @@ const CreateTaskBody = z.object({
   priority: z.enum(["low", "normal", "high"]).default("normal"),
 });
 
-export function createApp(db: DatabaseSync) {
+export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = {}) {
   const app = express();
   app.use(express.json());
+
+  // Internal engine surface: only meaningful with the shared secret (DESIGN §7).
+  // Unset secret = local-dev convenience; production must set INTERNAL_SECRET.
+  app.use("/internal", (req, res, next) => {
+    if (
+      opts.internalSecret !== undefined &&
+      req.header("x-relay-internal-secret") !== opts.internalSecret
+    ) {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
+    next();
+  });
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "relay-api", version: "0.1.0" });
