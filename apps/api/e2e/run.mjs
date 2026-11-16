@@ -17,7 +17,9 @@ const TSX_CLI = join(ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
+let total = 0;
 function check(name, cond, extra = "") {
+  total++;
   if (cond) console.log(`  PASS ${name}`);
   else {
     failures++;
@@ -188,5 +190,5 @@ try {
   if (apiProc) apiProc.kill();
 }
 
-console.log(failures === 0 ? "E2E ALL GREEN" : `E2E ${failures} FAILURES`);
+console.log(failures === 0 ? `E2E ALL GREEN (${total}/${total})` : `E2E ${failures} FAILURES of ${total}`);
 process.exit(failures === 0 ? 0 : 1);
