@@ -26,16 +26,20 @@ npm run dev        # api :3001 · engine worker · web :3000
 ```bash
 npm run typecheck  # all workspaces
 npm run test       # all workspaces (vitest)
+npm run test:e2e --workspace apps/api  # scripted E2E: 4 use cases + kill-restart (~40s)
 ```
 
-## Seed plan (EPIC-5, T-5.1.1)
+## Seed data
 
-- `apps/api/src/seed.ts` (planned): 20 tasks + 10 contributors across
-  `finance, healthcare, data-analysis, operations`, plus zero contributors with
-  `legal` expertise so the engine's explicit no-match path is reachable.
-- Idempotent: re-running the seed never duplicates rows.
+```bash
+npm run seed --workspace apps/api  # idempotent; uses DB_PATH (default ./data/relay.db)
+```
+
+- 10 contributors across `finance, healthcare, data-analysis, operations` (none with `legal`,
+  so the engine's explicit no-match path stays reachable — try the No-match preset on `Legal q`-style tasks).
+- 20 tasks across areas and priorities, all `created`.
 - Deterministic demo via per-request overrides: `{"engine": {"delayMs"}}`,
-  `{"drop": true}`, `{"forceNoMatch": true}` (ADR-003).
+  `{"drop": true}`, `{"forceNoMatch": true}` (ADR-003), or the board's Scenario buttons.
 
 ## Layout
 
