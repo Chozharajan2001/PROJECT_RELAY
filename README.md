@@ -17,9 +17,9 @@ npm run dev        # api :3001 · engine worker · web :3000
 
 | Service | URL / purpose |
 |---|---|
-| web | http://localhost:3000 — operator board (EPIC-4) |
-| api | http://localhost:3001 — REST + `GET /health` |
-| engine | worker — simulated router, callback-only (EPIC-3) |
+| web | http://localhost:3000 — operator board (see [Operator guide](docs/OPERATOR-GUIDE.md)) |
+| api | http://localhost:3001 — REST + `GET /health` (see [API reference](docs/API.md)) |
+| engine | worker — simulated router, callback-only (see [Engine simulation](docs/ENGINE.md)) |
 
 ## Verify
 
@@ -40,6 +40,16 @@ npm run seed --workspace apps/api  # idempotent; uses DB_PATH (default ./data/re
 - 20 tasks across areas and priorities, all `created`.
 - Deterministic demo via per-request overrides: `{"engine": {"delayMs"}}`,
   `{"drop": true}`, `{"forceNoMatch": true}` (ADR-003), or the board's Scenario buttons.
+
+## Docs
+
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — components, lifecycle, data model, config
+- [API.md](docs/API.md) — endpoint reference with examples
+- [ENGINE.md](docs/ENGINE.md) — simulator behavior, overrides, restart semantics
+- [OPERATOR-GUIDE.md](docs/OPERATOR-GUIDE.md) — the four use cases, step by step
+- [DEVELOPMENT.md](docs/DEVELOPMENT.md) — setup, scripts, tests, troubleshooting
+- [DECISIONS.md](docs/DECISIONS.md) — ADRs 001–004
+- [CHANGELOG.md](docs/CHANGELOG.md) — release history
 
 ## Layout
 
