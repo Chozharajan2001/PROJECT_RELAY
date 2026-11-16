@@ -44,11 +44,16 @@ function isSuspect(
 /** Default age after which a pending attempt is flagged `suspect` (ADR-001). */
 export const SUSPECT_AFTER_MS = 25_000;
 
-export function withAge(db: DatabaseSync, task: Task, nowMs = Date.now()): TaskWithAge {
+export function withAge(
+  db: DatabaseSync,
+  task: Task,
+  nowMs = Date.now(),
+  suspectAfterMs = SUSPECT_AFTER_MS,
+): TaskWithAge {
   return TaskWithAge.parse({
     ...task,
     ageSeconds: Math.max(0, Math.floor((nowMs - Date.parse(task.createdAt)) / 1000)),
-    suspect: isSuspect(db, task, nowMs),
+    suspect: isSuspect(db, task, nowMs, suspectAfterMs),
   });
 }
 
@@ -93,15 +98,24 @@ export function createTask(db: DatabaseSync, input: CreateTaskInput): Task {
   return parsed;
 }
 
-export function listTasks(db: DatabaseSync, nowMs = Date.now()): TaskWithAge[] {
+export function listTasks(
+  db: DatabaseSync,
+  nowMs = Date.now(),
+  suspectAfterMs = SUSPECT_AFTER_MS,
+): TaskWithAge[] {
   const rows = db
     .prepare("SELECT * FROM tasks ORDER BY created_at ASC")
     .all() as Array<Record<string, unknown>>;
   // N+1 suspect lookup is fine at demo scale; indexed by request_id (PK).
-  return rows.map((r) => withAge(db, rowToTask(r), nowMs));
+  return rows.map((r) => withAge(db, rowToTask(r), nowMs, suspectAfterMs));
 }
 
-export function getTask(db: DatabaseSync, taskId: string, nowMs = Date.now()): TaskWithAge | undefined {
+export function getTask(
+  db: DatabaseSync,
+  taskId: string,
+  nowMs = Date.now(),
+  suspectAfterMs = SUSPECT_AFTER_MS,
+): TaskWithAge | undefined {
   const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as
     | Record<string, unknown>
     | undefined;

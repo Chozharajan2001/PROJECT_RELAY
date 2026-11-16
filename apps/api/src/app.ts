@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { Response } from "express";
 import { randomUUID } from "node:crypto";
 import { Expertise, OverrideRequest, RouteRequest, RoutingCallback } from "@relay/contracts";
 import express from "express";
@@ -9,6 +10,7 @@ import {
   listContributors,
   listTasks,
   pendingJobs,
+  SUSPECT_AFTER_MS,
   taskHistory,
 } from "./store.js";
 import {
@@ -27,9 +29,27 @@ const CreateTaskBody = z.object({
   priority: z.enum(["low", "normal", "high"]).default("normal"),
 });
 
-export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = {}) {
+/** Single mapping for StateError → HTTP (Q9): unknown → 404, every other
+ *  StateError → 409. Returns true when handled; anything else propagates as a 500. */
+function mapStateError(e: unknown, res: Response): boolean {
+  if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
+    res.status(404).json({ error: e.message });
+    return true;
+  }
+  if (e instanceof StateError) {
+    res.status(409).json({ error: e.message, code: e.code });
+    return true;
+  }
+  return false;
+}
+
+export function createApp(
+  db: DatabaseSync,
+  opts: { internalSecret?: string; suspectAfterMs?: number } = {},
+) {
   const app = express();
   app.use(express.json());
+  const suspectAfterMs = opts.suspectAfterMs ?? SUSPECT_AFTER_MS;
 
   // Internal engine surface: only meaningful with the shared secret (DESIGN §7).
   // Unset secret = local-dev convenience; production must set INTERNAL_SECRET.
@@ -49,7 +69,7 @@ export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = 
   });
 
   app.get("/tasks", (_req, res) => {
-    res.json(listTasks(db));
+    res.json(listTasks(db, Date.now(), suspectAfterMs));
   });
 
   app.post("/tasks", (req, res) => {
@@ -80,14 +100,7 @@ export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = 
     try {
       startRouting(db, req.params.id, requestId);
     } catch (e) {
-      if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
-        res.status(404).json({ error: e.message });
-        return;
-      }
-      if (e instanceof StateError && (e.code === "INVALID_STATE" || e.code === "TERMINAL_STATE")) {
-        res.status(409).json({ error: e.message, code: e.code });
-        return;
-      }
+      if (mapStateError(e, res)) return;
       throw e;
     }
     if (parsed.data.engine !== undefined) {
@@ -117,12 +130,7 @@ export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = 
       }
       res.json({ applied: result.applied, reason: result.reason ?? null });
     } catch (e) {
-      if (e instanceof StateError) {
-        // Same mapping as operator endpoints (409): the engine cannot act on the
-        // distinction anyway; it logs and moves on.
-        res.status(409).json({ error: e.message, code: e.code });
-        return;
-      }
+      if (mapStateError(e, res)) return;
       throw e;
     }
   });
@@ -137,17 +145,10 @@ export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = 
       if (parsed.data.cancel === true) cancelRouting(db, req.params.id);
       else assignManual(db, req.params.id, parsed.data.contributorId as string);
     } catch (e) {
-      if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
-        res.status(404).json({ error: e.message });
-        return;
-      }
-      if (e instanceof StateError) {
-        res.status(409).json({ error: e.message, code: e.code });
-        return;
-      }
+      if (mapStateError(e, res)) return;
       throw e;
     }
-    res.json(getTask(db, req.params.id));
+    res.json(getTask(db, req.params.id, Date.now(), suspectAfterMs));
   });
 
   app.post("/tasks/:id/recover", (req, res) => {
@@ -159,22 +160,15 @@ export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = 
     try {
       if (parsed.data.contributorId !== undefined) {
         assignManual(db, req.params.id, parsed.data.contributorId);
-        res.json(getTask(db, req.params.id));
+        res.json(getTask(db, req.params.id, Date.now(), suspectAfterMs));
         return;
       }
       startRouting(db, req.params.id, randomUUID());
     } catch (e) {
-      if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
-        res.status(404).json({ error: e.message });
-        return;
-      }
-      if (e instanceof StateError) {
-        res.status(409).json({ error: e.message, code: e.code });
-        return;
-      }
+      if (mapStateError(e, res)) return;
       throw e;
     }
-    res.status(202).json(getTask(db, req.params.id));
+    res.status(202).json(getTask(db, req.params.id, Date.now(), suspectAfterMs));
   });
 
   const DecisionBody = z.object({ decision: z.enum(["accept", "decline", "fail"]) });
@@ -188,21 +182,14 @@ export function createApp(db: DatabaseSync, opts: { internalSecret?: string } = 
     try {
       applyDecision(db, req.params.id, parsed.data.decision as Decision);
     } catch (e) {
-      if (e instanceof StateError && e.code === "UNKNOWN_TASK") {
-        res.status(404).json({ error: e.message });
-        return;
-      }
-      if (e instanceof StateError) {
-        res.status(409).json({ error: e.message, code: e.code });
-        return;
-      }
+      if (mapStateError(e, res)) return;
       throw e;
     }
-    res.json(getTask(db, req.params.id));
+    res.json(getTask(db, req.params.id, Date.now(), suspectAfterMs));
   });
 
   app.get("/tasks/:id/history", (req, res) => {
-    if (getTask(db, req.params.id) === undefined) {
+    if (getTask(db, req.params.id, Date.now(), suspectAfterMs) === undefined) {
       res.status(404).json({ error: "unknown task" });
       return;
     }

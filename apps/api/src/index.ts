@@ -14,7 +14,7 @@ const db = openDb(DB_PATH);
 migrate(db);
 const reconciled = reconcileOnBoot(db, Date.now(), SUSPECT_AFTER);
 
-const app = createApp(db, { internalSecret: INTERNAL_SECRET });
+const app = createApp(db, { internalSecret: INTERNAL_SECRET, suspectAfterMs: SUSPECT_AFTER });
 
 app.listen(PORT, "127.0.0.1", () => {
   // eslint-disable-next-line no-console

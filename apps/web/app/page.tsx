@@ -76,8 +76,11 @@ export default async function Home() {
                   <td>{candidates.map((c) => c.name).join(", ") || "—"}</td>
                   <td>
                     {t.state === "created" ? <ScenarioButtons id={t.id} /> : null}
-                    {t.state === "routing" || t.state === "assigned" ? (
-                      <InterveneControls id={t.id} candidates={candidates} />
+                    {t.state === "routing" ? (
+                      <InterveneControls id={t.id} candidates={candidates} allowCancel />
+                    ) : null}
+                    {t.state === "assigned" ? (
+                      <InterveneControls id={t.id} candidates={candidates} allowCancel={false} />
                     ) : null}
                     {t.state === "assigned" ? <DecisionButtons id={t.id} /> : null}
                     {t.state === "declined" || t.state === "failed" ? (

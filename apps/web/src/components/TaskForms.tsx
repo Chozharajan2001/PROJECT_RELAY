@@ -48,13 +48,15 @@ export function ScenarioButtons({ id }: { id: string }) {
   );
 }
 
-/** Manual assign (override) + cancel, for routing/assigned tasks. */
+/** Manual assign (override) + cancel, for routing tasks. Assigned tasks get reassign only. */
 export function InterveneControls({
   id,
   candidates,
+  allowCancel,
 }: {
   id: string;
   candidates: { id: string; name: string }[];
+  allowCancel: boolean;
 }) {
   return (
     <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
@@ -70,9 +72,11 @@ export function InterveneControls({
           Assign
         </button>
       </form>
-      <form action={cancelRoute.bind(null, id)} style={{ display: "inline" }}>
-        <button type="submit">Cancel</button>
-      </form>
+      {allowCancel ? (
+        <form action={cancelRoute.bind(null, id)} style={{ display: "inline" }}>
+          <button type="submit">Cancel</button>
+        </form>
+      ) : null}
     </span>
   );
 }

@@ -46,6 +46,26 @@ function touch(db: DatabaseSync, taskId: string): void {
   );
 }
 
+/**
+ * Runs fn inside an IMMEDIATE transaction (Q6). Multi-statement transitions
+ * (attempt INSERT → task UPDATE → history) must not leave half-state on crash.
+ */
+export function tx<T>(db: DatabaseSync, fn: () => T): T {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const out = fn();
+    db.exec("COMMIT");
+    return out;
+  } catch (e) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // already rolled back / never began — report the original error
+    }
+    throw e;
+  }
+}
+
 const ROUTABLE_FROM = ["created", "declined", "failed"];
 
 /** Operator/engine request to start a routing attempt. */
@@ -65,6 +85,7 @@ export function startRouting(
     );
   if (task.active_routing_request_id !== null)
     throw new StateError("INVALID_STATE", "a routing attempt is already pending");
+  tx(db, () => {
   db.prepare(
     "INSERT INTO routing_attempts (request_id, task_id, status, dispatched_at, resolved_at, outcome_contributor_id) VALUES (?, ?, 'pending', ?, NULL, NULL)",
   ).run(requestId, taskId, nowIso);
@@ -73,6 +94,7 @@ export function startRouting(
   ).run(requestId, taskId);
   touch(db, taskId);
   insertHistory(db, taskId, "routing-started", { requestId });
+  });
 }
 
 /** Engine callback. Returns true when applied, false when ignored as stale. */
@@ -81,6 +103,7 @@ export function applyCallback(
   input: { routingRequestId: string; outcome: "matched" | "no-match"; contributorId?: string },
   nowIso = new Date().toISOString(),
 ): { applied: boolean; reason?: string } {
+  return tx(db, () => {
   const attempt = db
     .prepare("SELECT * FROM routing_attempts WHERE request_id = ?")
     .get(input.routingRequestId) as
@@ -148,6 +171,7 @@ export function applyCallback(
     by: "engine",
   });
   return { applied: true };
+  });
 }
 
 /** Operator manual assign/replace. Supersedes any pending attempt. */
@@ -164,12 +188,14 @@ export function assignManual(
     .get(contributorId) as { id: string } | undefined;
   if (!contributor)
     throw new StateError("UNKNOWN_CONTRIBUTOR", `unknown contributor: ${contributorId}`);
+  tx(db, () => {
   supersedePending(db, task.active_routing_request_id);
   db.prepare(
     "UPDATE tasks SET state = 'assigned', active_assignee_id = ?, assigned_by = 'operator', active_routing_request_id = NULL WHERE id = ?",
   ).run(contributorId, taskId);
   touch(db, taskId);
   insertHistory(db, taskId, "overridden", { contributorId, by: "operator" });
+  });
 }
 
 /** Operator cancels a pending routing attempt, back to created. */
@@ -177,12 +203,14 @@ export function cancelRouting(db: DatabaseSync, taskId: string): void {
   const task = getTask(db, taskId);
   if (task.state !== "routing" || task.active_routing_request_id === null)
     throw new StateError("INVALID_STATE", "no pending routing to cancel");
+  tx(db, () => {
   supersedePending(db, task.active_routing_request_id);
   db.prepare(
     "UPDATE tasks SET state = 'created', active_routing_request_id = NULL WHERE id = ?",
   ).run(taskId);
   touch(db, taskId);
   insertHistory(db, taskId, "overridden", { action: "cancel-routing" });
+  });
 }
 
 function supersedePending(db: DatabaseSync, requestId: string | null): void {
@@ -203,6 +231,7 @@ export function applyDecision(db: DatabaseSync, taskId: string, decision: Decisi
     throw new StateError("TERMINAL_STATE", "accepted is terminal");
   if (task.state !== "assigned" || task.active_assignee_id === null)
     throw new StateError("INVALID_STATE", `cannot ${decision} from state ${task.state}`);
+  tx(db, () => {
   if (decision === "accept") {
     db.prepare("UPDATE tasks SET state = 'accepted', active_routing_request_id = NULL WHERE id = ?").run(
       taskId,
@@ -217,6 +246,7 @@ export function applyDecision(db: DatabaseSync, taskId: string, decision: Decisi
   touch(db, taskId);
   insertHistory(db, taskId, decision === "decline" ? "declined" : "failed", {
     contributorId: task.active_assignee_id,
+  });
   });
 }
 
